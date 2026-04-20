@@ -1,7 +1,22 @@
 #pragma once
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#define INVALID_SOCKET (-1)
+#define SOCKET_ERROR (-1)
+using SOCKET = int;
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -11,8 +26,7 @@
 #include <queue>
 #include <string>
 #include <thread>
-
-#pragma comment(lib, "ws2_32.lib")
+#include <vector>
 
 class NetworkManager {
  public:
@@ -53,6 +67,14 @@ class NetworkManager {
   void ReceiveLoop();
   void HeartbeatLoop();
   void ProcessReceivedData();
+
+#ifdef _WIN32
+  void SetNonBlocking(SOCKET socket);
+#else
+  void SetNonBlocking(SOCKET socket);
+  int GetLastSocketError();
+  bool WouldBlock();
+#endif
 
   SOCKET client_socket = INVALID_SOCKET;
   std::atomic<bool> is_connected{false};
