@@ -1,7 +1,6 @@
 #include "NetworkManager.h"
 
 #include <cstring>
-#include <iostream>
 
 #ifdef _WIN32
 // Windows-specific includes already in header
@@ -22,13 +21,11 @@ bool NetworkManager::Initialize() {
 #ifdef _WIN32
   WSADATA wsa_data;
   if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-    std::cerr << "[!] WSAStartup failed" << std::endl;
     return false;
   }
 #else
   // POSIX не требует специальной инициализации
 #endif
-  std::cout << "[*] Network initialized" << std::endl;
   return true;
 }
 
@@ -37,7 +34,6 @@ void NetworkManager::Shutdown() {
 #ifdef _WIN32
   WSACleanup();
 #endif
-  std::cout << "[*] Network shutdown" << std::endl;
 }
 
 #ifdef _WIN32
@@ -65,12 +61,6 @@ bool NetworkManager::Connect(const std::string& host, int port) {
 
   client_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (client_socket == INVALID_SOCKET) {
-#ifdef _WIN32
-    std::cerr << "[!] Failed to create socket, error: " << WSAGetLastError()
-              << std::endl;
-#else
-    std::cerr << "[!] Failed to create socket, error: " << errno << std::endl;
-#endif
     return false;
   }
 
@@ -107,7 +97,6 @@ bool NetworkManager::Connect(const std::string& host, int port) {
 #else
   if (inet_aton(host.c_str(), &server_addr.sin_addr) == 0) {
 #endif
-    std::cerr << "[!] Invalid address: " << host << std::endl;
 #ifdef _WIN32
     closesocket(client_socket);
 #else
@@ -116,9 +105,6 @@ bool NetworkManager::Connect(const std::string& host, int port) {
     client_socket = INVALID_SOCKET;
     return false;
   }
-
-  std::cout << "[*] Connecting to " << host << ":" << port << "..."
-            << std::endl;
 
   int connect_result =
       connect(client_socket, reinterpret_cast<sockaddr*>(&server_addr),
@@ -129,12 +115,6 @@ bool NetworkManager::Connect(const std::string& host, int port) {
     if (WSAGetLastError() != WSAEWOULDBLOCK) {
 #else
     if (errno != EINPROGRESS) {
-#endif
-      std::cerr << "[!] Connection failed, error: "
-#ifdef _WIN32
-                << WSAGetLastError() << std::endl;
-#else
-                << errno << std::endl;
 #endif
 #ifdef _WIN32
       closesocket(client_socket);
@@ -156,7 +136,6 @@ bool NetworkManager::Connect(const std::string& host, int port) {
         select(client_socket + 1, nullptr, &write_set, nullptr, &timeout);
 
     if (select_result <= 0 || !FD_ISSET(client_socket, &write_set)) {
-      std::cerr << "[!] Connection timeout" << std::endl;
 #ifdef _WIN32
       closesocket(client_socket);
 #else
@@ -179,14 +158,11 @@ bool NetworkManager::Connect(const std::string& host, int port) {
     connect_callback();
   }
 
-  std::cout << "[*] Connected to " << host << ":" << port << std::endl;
   return true;
 }
 
 void NetworkManager::Disconnect() {
   if (!is_connected) return;
-
-  std::cout << "[*] Disconnecting..." << std::endl;
 
   is_running = false;
   is_connected = false;
@@ -221,13 +197,10 @@ void NetworkManager::Disconnect() {
   if (disconnect_callback) {
     disconnect_callback();
   }
-
-  std::cout << "[*] Disconnected" << std::endl;
 }
 
 bool NetworkManager::Send(const std::string& message) {
   if (!is_connected || client_socket == INVALID_SOCKET) {
-    std::cerr << "[!] Not connected" << std::endl;
     return false;
   }
 
@@ -240,11 +213,6 @@ bool NetworkManager::Send(const std::string& message) {
                     static_cast<int>(msg_with_newline.length()), 0);
 
   if (result == SOCKET_ERROR) {
-#ifdef _WIN32
-    std::cerr << "[!] Send failed, error: " << WSAGetLastError() << std::endl;
-#else
-    std::cerr << "[!] Send failed, error: " << errno << std::endl;
-#endif
     if (disconnect_callback) {
       disconnect_callback();
     }
@@ -259,7 +227,6 @@ void NetworkManager::Update() { ProcessReceivedData(); }
 
 void NetworkManager::ReceiveLoop() {
   char buffer[kBufferSize];
-  std::cout << "[*] Receive thread started" << std::endl;
 
   while (is_running && is_connected) {
     fd_set read_set;
@@ -272,11 +239,6 @@ void NetworkManager::ReceiveLoop() {
         select(client_socket + 1, &read_set, nullptr, nullptr, &timeout);
 
     if (select_result == SOCKET_ERROR) {
-#ifdef _WIN32
-      std::cerr << "[!] select failed: " << WSAGetLastError() << std::endl;
-#else
-      std::cerr << "[!] select failed: " << errno << std::endl;
-#endif
       break;
     }
 
@@ -285,7 +247,6 @@ void NetworkManager::ReceiveLoop() {
       int bytes_received = recv(client_socket, buffer, kBufferSize - 1, 0);
 
       if (bytes_received == 0) {
-        std::cout << "[*] Server closed connection" << std::endl;
         break;
       }
 
@@ -297,7 +258,6 @@ void NetworkManager::ReceiveLoop() {
         int error = errno;
         if (error != EAGAIN && error != EWOULDBLOCK) {
 #endif
-          std::cerr << "[!] recv failed: " << error << std::endl;
           break;
         }
         continue;
@@ -318,7 +278,6 @@ void NetworkManager::ReceiveLoop() {
         }
 
         if (receive_buffer.size() > kBufferSize * 10) {
-          std::cerr << "[!] Receive buffer overflow, clearing" << std::endl;
           receive_buffer.clear();
         }
       }
@@ -332,25 +291,16 @@ void NetworkManager::ReceiveLoop() {
     is_connected = false;
     is_running = false;
   }
-
-  std::cout << "[*] Receive thread stopped" << std::endl;
 }
 
 void NetworkManager::HeartbeatLoop() {
-  std::cout << "[*] Heartbeat thread started (interval: "
-            << kHeartbeatIntervalSec << " sec)" << std::endl;
-
   while (is_running && is_connected) {
     std::this_thread::sleep_for(std::chrono::seconds(kHeartbeatIntervalSec));
 
     if (!is_connected || !is_running) break;
 
-    if (Send("HEARTBEAT")) {
-      // Heartbeat sent successfully
-    }
+    Send("HEARTBEAT");
   }
-
-  std::cout << "[*] Heartbeat thread stopped" << std::endl;
 }
 
 void NetworkManager::ProcessReceivedData() {
